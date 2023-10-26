@@ -14,6 +14,9 @@ const userSchema = new Schema({
     type: String,
     required: [true, "Please add a last name"],
   },
+  profilePic: {
+    type: String,
+  },
   email: {
     type: String,
     required: true,

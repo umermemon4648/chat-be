@@ -2,6 +2,8 @@ const User = require("../models/User/user");
 const sendMail = require("../utils/sendMail");
 const SuccessHandler = require("../utils/SuccessHandler");
 const ErrorHandler = require("../utils/ErrorHandler");
+const path = require("path");
+
 //register
 const register = async (req, res) => {
   // #swagger.tags = ['auth']
@@ -23,11 +25,32 @@ const register = async (req, res) => {
     if (user) {
       return ErrorHandler("User already exists", 400, req, res);
     }
+
+    let profilePicName = null;
+    if (req.file) {
+      const { profilePic } = req.file;
+      if (profilePic) {
+        // It should be image
+        if (!profilePic.mimetype.startsWith("image")) {
+          return ErrorHandler("Please upload an image file", 400, req, res);
+        }
+        profilePicName = `${Date.now()}${profilePic.name}`;
+        avatar.mv(
+          path.join(__dirname, `../../uploads/${profilePicName}`),
+          (err) => {
+            if (err) {
+              return ErrorHandler(err.message, 400, req, res);
+            }
+          }
+        );
+      }
+    }
     const newUser = await User.create({
       firstName,
       lastName,
       email,
       password,
+      profilePic: profilePicName,
     });
     newUser.save();
     return SuccessHandler("User created successfully", 200, res);
