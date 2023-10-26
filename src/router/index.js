@@ -1,8 +1,8 @@
-const auth = require("./auth");
-const discussion = require("./discussion");
 const router = require("express").Router();
+const auth = require("./auth");
+const chat = require("./chat");
 
 router.use("/auth", auth);
-router.use("/discussion", discussion);
+router.use("/chat", chat);
 
 module.exports = router;
