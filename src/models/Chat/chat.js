@@ -17,7 +17,7 @@ const chatSchema = new Schema(
 
     unSeenCount: {
       type: Number,
-      default: 1,
+      default: 0,
     },
   },
   {

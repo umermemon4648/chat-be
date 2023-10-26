@@ -9,19 +9,25 @@ const ErrorHandler = require("../utils/ErrorHandler");
 const createChat = async (req, res) => {
   // #swagger.tags = ['chat']
   try {
-    const { userId } = req.params;
+    const { userId } = req.body;
     const isChat = await Chat.findOne({
       $and: [
         { participants: { $elemMatch: { $eq: userId } } },
         { participants: { $elemMatch: { $eq: req.user._id } } },
       ],
-    });
+    })
+      .populate("participants")
+      .populate("latestMessage");
+
     if (isChat) {
       return ErrorHandler("Chat already exist", 400, req, res);
     }
-    const chat = await Chat.create({
+    const createChat = await Chat.create({
       participants: [userId, req.user._id],
     });
+    const chat = await Chat.findOne({ _id: createChat._id })
+      .populate("participants")
+      .populate("latestMessage");
     return SuccessHandler(
       { message: "Chat created successfully", chat },
       200,
@@ -39,13 +45,31 @@ const fetchChats = async (req, res) => {
     const chats = await Chat.find({
       participants: { $in: [req.user._id] },
     })
-      .populate("participants")
-      .populate("latestMessage");
-    return SuccessHandler(
-      { message: "Fetched chats successfully", chats },
-      200,
-      res
-    );
+      .populate({
+        path: "participants",
+        select: "name email profilePic _id",
+      })
+      .populate("latestMessage")
+      .sort({ createdAt: -1 });
+    if (chats.length === 0) {
+      return ErrorHandler("chat not found", 404, req, res);
+    }
+    if (chats.length > 0) {
+      for (const i of chats) {
+        const unSeenCount = await Message.countDocuments({
+          chats: i._id,
+          isRead: false,
+        });
+        await Chat.findByIdAndUpdate(i._id, {
+          unSeenCount: unSeenCount,
+        });
+      }
+      return SuccessHandler(
+        { message: "Fetched chats successfully", chats },
+        200,
+        res
+      );
+    }
   } catch (error) {
     return ErrorHandler(error.message, 500, req, res);
   }
@@ -55,13 +79,17 @@ const fetchChats = async (req, res) => {
 const singleChat = async (req, res) => {
   // #swagger.tags = ['chat']
   try {
-    const { chatId } = req.params;
+    const { chatId } = req.body;
     const chat = await Chat.findOne({
       _id: chatId,
       participants: { $in: [req.user._id] },
     })
-      .populate("participants")
-      .populate("latestMessage");
+      .populate({
+        path: "participants",
+        select: "name email profilePic _id",
+      })
+      .populate("latestMessage")
+      .sort({ createdAt: -1 });
     return SuccessHandler(
       { message: "Fetched chat successfully", chat },
       200,
@@ -75,13 +103,38 @@ const singleChat = async (req, res) => {
 const sendMessage = async (req, res) => {
   // #swagger.tags = ['chat']
   try {
-    const { chatId } = req.params;
-    const { senderId, message } = req.body;
-    const createMessage = await Message.create({
-      sender: senderId,
+    // const { chatId } = req.params;
+    const { message, chatId } = req.body;
+    let createMessage = await Message.create({
+      sender: req.user._id,
       chat: chatId,
       message,
     });
+    createMessage = await createMessage.populate({
+      path: "sender",
+      select: "name email profilePic _id",
+    });
+    createMessage = await createMessage.populate({
+      path: "chat",
+    });
+    createMessage = await User.populate(createMessage, {
+      path: "chat.participants",
+      select: "name email profilePic _id",
+    });
+    await createMessage.save();
+    const chat = await Chat.findById(chatId);
+    await Chat.findOneAndUpdate(
+      {
+        _id: chatId,
+      },
+
+      {
+        $set: {
+          unSeenCount: chat.unSeenCount + 1,
+          latestMessage: createMessage._id,
+        },
+      }
+    );
     return SuccessHandler(
       { message: "Message send successfully", createMessage },
       200,
@@ -100,10 +153,13 @@ const fetchMessages = async (req, res) => {
     const messages = await Message.find({
       chat: chatId,
     })
-      .populate("participants")
-      .populate("latestMessage");
+      .populate({
+        path: "sender",
+        select: "name email profilePic _id",
+      })
+      .populate("chat");
     return SuccessHandler(
-      { message: "Message fetched successfully", messages },
+      { message: "Messages fetched successfully", messages },
       200,
       res
     );
